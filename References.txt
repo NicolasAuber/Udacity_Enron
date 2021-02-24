@@ -1,0 +1,10 @@
+- https://scikit-learn.org/stable/ > Documentation on sk-learn
+- https://stackoverflow.com/ > For coding purposes
+- https://towardsdatascience.com/7-ways-to-handle-missing-values-in-machine-learning-1a6326adf79e
+- https://towardsdatascience.com/machine-learning-pipelines-with-scikit-learn-d43c32a6aa52 
+- Several data analyses on Titanic dataset > Understanding of the overall process (in addition to Udacity course)
+
+I hereby confirm that this submission is my work. I have cited above the origins of any parts
+of the submission that were taken from Websites, books, forums, blog posts, github repositories, etc.
+
+Nicolas Auber
