@@ -24,6 +24,7 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.svm import SVC
 from sklearn import tree, ensemble, neighbors
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.feature_selection import SelectKBest, chi2
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn import decomposition
 from sklearn.pipeline import Pipeline
@@ -34,6 +35,7 @@ print("numpy: ", np.__version__)
 print("pandas: ", pd.__version__)
 print("seaborn: ", sns.__version__)
 
+t0 = time.time()
 ########################
 ### Data Exploration ###
 ########################
@@ -74,15 +76,18 @@ print(df.head())
 print("Total: ", df['poi'].count())
 print("Number of POI: ", df[df['poi']==True]['poi'].count())
 print("Number of non POI: ", df[df['poi']==False]['poi'].count())
-print("###############################")
+print("###")
 #df = df[df['salary'].notnull()]
 #df = df[df['bonus'].notnull()]
 df1 = df[df['from_messages'].notnull()]
 print(df1.count())
-print("###############################")
+print("###")
 print("Total: ", df1['poi'].count())
 print("Number of POI: ", df1[df1['poi']==True]['poi'].count())
 print("Number of non POI: ", df1[df1['poi']==False]['poi'].count())
+
+# Checks if some employees have only NaN values
+df[df.isnull().sum(axis=1)==len(features_list)-1].index[:]
 
 df['salary'].plot.hist(bins=20)
 plt.show()
@@ -146,7 +151,7 @@ pprint.pprint(features_list)
 ### Task 2: Remove outliers
 
 # Removes the outliers from the Enron dataset
-outliers_list = ['LAY KENNETH L', 'KAMINSKI WINCENTY J']
+outliers_list = ['LAY KENNETH L', 'KAMINSKI WINCENTY J','LOCKHART EUGENE E']
 for item in outliers_list:
     data_dict.pop(item)
 
@@ -161,6 +166,9 @@ for employee in employees_list:
 # Enron employees
 employees_list = list(data_dict.keys())
 print("Number of employees: ", len(employees_list))
+
+# Creates the dataset
+my_dataset = data_dict
 
 ####################
 ### New Features ###
@@ -183,26 +191,78 @@ for name in data_dict:
     data_dict[name]['ratio_from_poi'] = calcRatio(data_dict[name]['from_poi_to_this_person'],data_dict[name]['to_messages'])
     data_dict[name]['ratio_shared_poi'] = calcRatio(data_dict[name]['shared_receipt_with_poi'],data_dict[name]['to_messages'])
 
-# Adds the new email features to the list of features
-append_feature_list = ['ratio_to_poi','ratio_from_poi','ratio_shared_poi']
+print ("###")
+print ("Feature selection analysis on email features")
+print ("###")
+
+# Creates a list of email features
+features_email_list = ['poi',
+                       'from_this_person_to_poi','from_poi_to_this_person','shared_receipt_with_poi','from_messages','to_messages',
+                       'ratio_from_poi','ratio_to_poi','ratio_shared_poi']
+
+# Evaluates the performance of the classifier
+clf = tree.DecisionTreeClassifier()
+test_classifier(clf, my_dataset, features_email_list)
+
+# Displays the importance of features
+print("Features importance for email features:")
+for importance, feature in sorted(zip(clf.feature_importances_, features_email_list[1:]),reverse=True):
+    print ('{}: {:.3}'.format(feature, importance))
+
+print ("###")
+print ("Univariate feature selection analysis")
+print ("###")
+
+# Extracts the labels and features used by the POI classifier
+data = featureFormat(data_dict, features_list,remove_all_zeroes=True)
+labels, features = targetFeatureSplit(data)
+features_train, features_test, labels_train, labels_test = train_test_split(features, labels, test_size=0.3, random_state=42)
+
+# Creates a pipeline of two steps.
+pipe = Pipeline([('sel', SelectKBest()),
+                 ('clf', tree.DecisionTreeClassifier())])
+
+### Parameters
+k = [1,2,3,4,5]
+max_depth = [2,4,6]
+min_samples_split = [2,10,20]
+
+# Creates Parameter Space
+parameters = [{'sel__k':k},
+              {'clf__max_depth':max_depth,
+               'clf__min_samples_split':min_samples_split}]
+
+# Conducts Parameter Optmization With Pipeline
+# Creating a grid search object
+clf = GridSearchCV(pipe, parameters, scoring='recall', cv=5)
+
+# Fits the grid search
+clf.fit(features_train, labels_train)
+
+# Prints the Best Parameters
+print('Best score:', clf.best_score_)
+print('Best estimator:', clf.best_estimator_)
+    
+print ("###")
+print ("Feature selection")
+print ("###")
+
+# Adds the newly selected email features to the list of features
+append_feature_list = ['ratio_from_poi','ratio_to_poi']
 for feature in append_feature_list:
     features_list.append(feature)
     
-# Removes the old email features from the list of features
-remove_feature_list = ['from_this_person_to_poi','from_poi_to_this_person','shared_receipt_with_poi','from_messages','to_messages']
+# Removes the non selected email features from the list of features
+remove_feature_list = ['from_this_person_to_poi','from_poi_to_this_person','from_messages']
 for feature in remove_feature_list:
     features_list.remove(feature)
-    
-# Creates the dataset and extracts the labels and features used by the POI classifier
-my_dataset = data_dict
-data = featureFormat(data_dict, features_list,remove_all_zeroes=True)
-labels, features = targetFeatureSplit(data)
 
 ###################
 ### Classifiers ###
 ###################
 print ("###########")
 print ("Classifiers")
+print ("###########")
 
 ### Task 4: Try a varity of classifiers
 ### Please name your classifier clf for easy export below.
@@ -223,7 +283,6 @@ for classifier in classifiers:
     clf = classifier
     test_classifier(clf, my_dataset, features_list)
     
-
 ########################
 ### Algorithm Tuning ###
 ########################
@@ -235,6 +294,9 @@ for classifier in classifiers:
 ### stratified shuffle split cross validation. For more info: 
 ### http://scikit-learn.org/stable/modules/generated/sklearn.cross_validation.StratifiedShuffleSplit.html
 
+# Extracts the labels and features
+data = featureFormat(data_dict, features_list,remove_all_zeroes=True)
+labels, features = targetFeatureSplit(data)
 features_train, features_test, labels_train, labels_test = train_test_split(features, labels, test_size=0.3, random_state=42)
 
 '''
@@ -245,12 +307,12 @@ rescaled_labels, rescaled_features = targetFeatureSplit(rescaled_data)
 features_train, features_test, labels_train, labels_test = train_test_split(rescaled_features, rescaled_labels, test_size=0.3, random_state=42)
 '''
 
-'''
 ################################
 ### Pipeline: Scaler/PCA/KNN ###
 ################################
 print ("#############")
 print ("Pipeline: KNN")
+print ("#############")
 
 # Creates an standardscaler object
 scaler = MinMaxScaler()
@@ -292,14 +354,13 @@ clf.fit(features_train, labels_train)
 print('Best n_neighbors:', clf.best_estimator_.get_params()['knn__n_neighbors'])
 print('Best number of components:', clf.best_estimator_.get_params()['pca__n_components'])
 print(clf.best_estimator_.get_params()['knn'])
-'''
 
-'''
 #############################
 ### Classifier Tuning: DT ###
 #############################
 print ("#####################")
 print ("Classifier Tuning: DT")
+print ("#####################")
   
 ### GridSearchCV DT
 criterion = ['gini', 'entropy']
@@ -309,6 +370,7 @@ min_samples_split = [2,10,20,30,40]
 parameters = {'criterion':criterion,
               'max_depth':max_depth,
               'min_samples_split':min_samples_split}
+
 clf = GridSearchCV(tree.DecisionTreeClassifier(), parameters, scoring='recall', cv=5)
 clf.fit(features_train, labels_train)
 
@@ -316,13 +378,14 @@ clf.fit(features_train, labels_train)
 print('Best criterion:', clf.best_estimator_.get_params()['criterion'])
 print('Best max_depth:', clf.best_estimator_.get_params()['max_depth'])
 print('Best min_samples_split:', clf.best_estimator_.get_params()['min_samples_split'])
-'''
 
+'''
 #############################
 ### Classifier Tuning: AB ###
 #############################
 print ("#####################")
 print ("Classifier Tuning: AB")   
+print ("#####################")
 
 ### GridSearchCV AdaBoost
 parameters = {"n_estimators": np.arange(10,300,10),
@@ -338,12 +401,12 @@ print('')
 print('Best n_estimators:', clf.best_estimator_.get_params()['n_estimators'])
 print('Best learning_rate:', clf.best_estimator_.get_params()['learning_rate'])
 
-'''
 ##############################
 ### Classifier Tuning: KNN ###
 ##############################
 print ("######################")
 print ("Classifier Tuning: KNN")  
+print ("######################")
 
 ### GridSearchCV KNN
 parameters = {'n_neighbors': list(range(1,10))}
@@ -360,21 +423,30 @@ print('Best n_neighbors:', clf.best_estimator_.get_params()['n_neighbors'])
 ############################
 ### Optimized Classifier ###
 ############################
-print ("#####################")
-print ("Optimized Classifiers")  
+print ("####################")
+print ("Optimized Classifier")  
+print ("####################")
 
-clf = tree.DecisionTreeClassifier(criterion='entropy',max_depth=6,min_samples_split=10)
+clf = tree.DecisionTreeClassifier(criterion='entropy',max_depth=6,min_samples_split=2)
 test_classifier(clf, my_dataset, features_list)
 
 # Prints the feature importance
 print("Features importance:")
-for importance, feature in sorted(zip(clf.feature_importances_, features_list),reverse=True)[:10]:
+for importance, feature in sorted(zip(clf.feature_importances_, features_list[1:]),reverse=True)[:5]:
     print ('{}: importance = {:.3}'.format(feature, importance))
-       
+
+'''
+pipe = Pipeline([('sel', SelectKBest(k=5)),
+                 ('clf', tree.DecisionTreeClassifier(criterion='gini',max_depth=None,min_samples_split=2))])
+test_classifier(pipe, my_dataset, features_list)
+
+features_list = ['poi','other','ratio_to_poi']
+clf = tree.DecisionTreeClassifier(criterion='entropy',max_depth=6,min_samples_split=2)
+test_classifier(clf, my_dataset, features_list)
+      
 clf = ensemble.AdaBoostClassifier(learning_rate=1,n_estimators=20)
 test_classifier(clf, my_dataset, features_list)
 
-'''
 clf = neighbors.KNeighborsClassifier(n_neighbors=1)
 test_classifier(clf, my_dataset, features_list)
 '''
@@ -389,3 +461,5 @@ test_classifier(clf, my_dataset, features_list)
 ### generates the necessary .pkl files for validating your results.
 
 dump_classifier_and_data(clf, my_dataset, features_list)
+
+print ("Total elapsed time:", round(time.time()-t0, 3), "s")
